@@ -13,18 +13,10 @@
  */
 #include "planner.h"
 
-/*
- * @var  static const double  max steps before assuming no solution possible
- */
+//最大搜索步数不超过该值，一旦超过则认为无解
 const double Planner::MAX_STEPS = 1000000;
 
-/**
- * Constructor.
- *
- * @param  Map*         map
- * @param  Map::Cell*   start cell
- * @param  Map::Cell*   goal cell
- */
+//构造函数，map：环境地图，
 Planner::Planner(Map* map, Map::Cell* start, Map::Cell* goal)
 {
 	// Clear lists
@@ -44,9 +36,7 @@ Planner::Planner(Map* map, Map::Cell* start, Map::Cell* goal)
 	_list_insert(_goal, pair<double,double>(_h(_start, _goal), 0));
 }
 
-/**
- * Deconstructor.
- */
+//析构函数
 Planner::~Planner()
 {
 }

@@ -22,9 +22,6 @@ Dialog::Dialog(QWidget *parent) :
     QDialog(parent),
     ui(new Ui::Dialog)
 {
-    _real_widget=new RealModel;
-    _robot_widget=new RobotModel;
-
     ui->setupUi(this);
 
     leftRect=QRect(10,10,200,300);
@@ -56,11 +53,11 @@ void Dialog::on_pushButton_clicked()
         return;
     }
 
-    start=QPoint(0,0);
-    goal=QPoint(499,499);
+    startPoint=QPoint(0,0);
+    goalPoint=QPoint(249,249);
 
-    _real_widget->data = new unsigned char[img_width * img_height];
-    _robot_widget->data = new unsigned char[img_width * img_height];
+    realWorldData = new unsigned char[img_width * img_height];
+    robotPerceiveData = new unsigned char[img_width * img_height];
 
     for (int i = 0; i < img_height; i++)
     {
@@ -73,14 +70,14 @@ void Dialog::on_pushButton_clicked()
 
             if (img_depth == 1)
             {
-                _real_widget->data[k1] = real_bitmap.bits()[k2];
-                _robot_widget->data[k1] = robot_bitmap.bits()[k2];
+                realWorldData[k1] = real_bitmap.bits()[k2];
+                robotPerceiveData[k1] = robot_bitmap.bits()[k2];
             }
             else if ((img_depth == 3)||(img_depth == 4))
             {
                 // Convert to grayscale
-                _real_widget->data[k1] = (unsigned char) (0.3 * real_bitmap.bits()[k2] + 0.59 * real_bitmap.bits()[k2 + 1] + 0.11 * real_bitmap.bits()[k2 + 2] + 0.5);
-                _robot_widget->data[k1] = (unsigned char) (0.3 * robot_bitmap.bits()[k2] + 0.59 * robot_bitmap.bits()[k2 + 1] + 0.11 * robot_bitmap.bits()[k2 + 2] + 0.5);
+                realWorldData[k1] = (unsigned char) (0.3 * real_bitmap.bits()[k2] + 0.59 * real_bitmap.bits()[k2 + 1] + 0.11 * real_bitmap.bits()[k2 + 2] + 0.5);
+                robotPerceiveData[k1] = (unsigned char) (0.3 * robot_bitmap.bits()[k2] + 0.59 * robot_bitmap.bits()[k2 + 1] + 0.11 * robot_bitmap.bits()[k2 + 2] + 0.5);
             }
             else
             // Unsupported depth
@@ -91,17 +88,17 @@ void Dialog::on_pushButton_clicked()
     }
 
     // Set the robot radius
-    _real_widget->robot_radius = _robot_widget->robot_radius = 2;
+    robot_radius = 2;
 
     // Sert the scan radius
-    _robot_widget->scan_radius = 30;
+    scan_radius = 30;
 
     // Make the map
     _map = new Map(img_height, img_width);
 
     // Set current and goal position
-    _real_widget->current = _robot_widget->current = (*_map)(start.x(), start.y());
-    _real_widget->goal = _robot_widget->goal = (*_map)(goal.x(), goal.y());
+    current = (*_map)(startPoint.x(), startPoint.y());
+    goal = (*_map)(goalPoint.x(), goalPoint.y());
 
     // Build map
     for (int i = 0; i < img_height; i++)
@@ -109,7 +106,7 @@ void Dialog::on_pushButton_clicked()
         for (int j = 0; j < img_width; j++)
         {
             int k = (i * img_width) + j;
-            double v = (double) _robot_widget->data[k];
+            double v = (double) robotPerceiveData[k];
 
             // Cell is unwalkable
             if (v == UNWALKABLE_CELL)
@@ -126,17 +123,17 @@ void Dialog::on_pushButton_clicked()
     }
 
     // Make planner
-    _planner = new Planner(_map, _robot_widget->current, _robot_widget->goal);
+    _planner = new Planner(_map, current, goal);
 
     // Push start position
-    _real_widget->path_traversed.push_back(_planner->start());
+    path_traversed.push_back(_planner->start());
 
     if ( ! _planner->replan())
     {
         QMessageBox::warning(NULL,"Error!","No Solution Found!");
         return;
     }
-    _robot_widget->path_planned = _planner->path();
+    path_planned = _planner->path();
 
     timer=new QTimer();
     connect(timer,SIGNAL(timeout()),this,SLOT(on_timer()));
@@ -148,17 +145,11 @@ void Dialog::on_pushButton_clicked()
 void Dialog::on_timer()
 {
     if (execute() == 0)
-          redraw();
+          update();
     else
     {
         timer->stop();
     }
-}
-
-int Dialog::redraw()
-{
-    update();
-    return 0;
 }
 
 /*
@@ -168,16 +159,14 @@ int Dialog::redraw()
  */
 bool Dialog::update_map()
 {
+    //机器人感知的地图与真实世界的差别标志
     bool error = false;
 
-    Map::Cell* current = _robot_widget->current;
-
-    unsigned int x, y;
-    x = current->x();
-    y = current->y();
+    unsigned int x= current->x();
+    unsigned int y= current->y();
 
     // Radius^2
-    unsigned int radius = _robot_widget->scan_radius;
+    unsigned int radius = scan_radius;
     unsigned int radius2 = radius * radius;
 
     unsigned int rows, cols;
@@ -205,12 +194,12 @@ bool Dialog::update_map()
                 unsigned int k = (i * cols) + j;
 
                 // Check if an update is required
-                if (_robot_widget->data[k] != _real_widget->data[k])
+                if (robotPerceiveData[k] != realWorldData[k])
                 {
                     error = true;
 
-                    _robot_widget->data[k] = _real_widget->data[k];
-                    double v = (double) _robot_widget->data[k];
+                    robotPerceiveData[k] = realWorldData[k];
+                    double v = (double) robotPerceiveData[k];
 
                     if (v == UNWALKABLE_CELL)
                     {
@@ -236,7 +225,7 @@ int Dialog::execute()
     if (_planner->start() == _planner->goal())
     {
         QMessageBox::information(NULL,"OK","Goal Reached!");
-        _real_widget->current = _robot_widget->current = _planner->goal();
+        current = _planner->goal();
         return 1;
     }
 
@@ -250,19 +239,19 @@ int Dialog::execute()
             return 0;
         }
 
-        _robot_widget->path_planned = _planner->path();
+        path_planned = _planner->path();
 
-        if ( ! _robot_widget->path_planned.empty())
+        if ( ! path_planned.empty())
         {
-            _robot_widget->path_planned.pop_front();
+           path_planned.pop_front();
         }
     }
 
     // Step
-    _real_widget->path_traversed.push_back(_robot_widget->path_planned.front());
-    _planner->start(_robot_widget->path_planned.front());
-    _real_widget->current = _robot_widget->current = _planner->start();
-    _robot_widget->path_planned.pop_front();
+    path_traversed.push_back(path_planned.front());
+    _planner->start(path_planned.front());
+    current =  _planner->start();
+    path_planned.pop_front();
 
     return 0;
 }
@@ -282,7 +271,7 @@ void Dialog::paintEvent(QPaintEvent *)
         painter.drawText(leftRect.center().x()-70,leftRect.center().y(),"Click to open real map.");
     else
         if (_init)
-            painter.drawImage(leftRect,Pk8bitGrayToQIm(_real_widget->data,real_bitmap.width(),real_bitmap.height()));
+            painter.drawImage(leftRect,Pk8bitGrayToQIm(realWorldData,real_bitmap.width(),real_bitmap.height()));
         else
             painter.drawImage(leftRect,real_bitmap);
 
@@ -290,7 +279,7 @@ void Dialog::paintEvent(QPaintEvent *)
         painter.drawText(rightRect.center().x()-70,rightRect.center().y(),"Click to open robot map.");
     else
         if (_init)
-            painter.drawImage(rightRect,Pk8bitGrayToQIm(_robot_widget->data,robot_bitmap.width(),robot_bitmap.height()));
+            painter.drawImage(rightRect,Pk8bitGrayToQIm(robotPerceiveData,robot_bitmap.width(),robot_bitmap.height()));
         else
             painter.drawImage(rightRect,robot_bitmap);
 
@@ -301,33 +290,33 @@ void Dialog::paintEvent(QPaintEvent *)
         // Draw traversed path
         pen.setColor(QColor(0,255,0));
         painter.setPen(pen);
-        for (list<Map::Cell*>::iterator i = _real_widget->path_traversed.begin(); i != _real_widget->path_traversed.end(); i++)
+        for (list<Map::Cell*>::iterator i = path_traversed.begin(); i != path_traversed.end(); i++)
             painter.drawPoint(leftRect.left() + (*i)->x(), leftRect.top() + (*i)->y());
         // Draw current position
         pen.setColor(QColor(255,128,128));
         painter.setPen(pen);
-        painter.drawEllipse(QPoint(leftRect.left() + _real_widget->current->x(), leftRect.top() + _real_widget->current->y()),
-                            _real_widget->robot_radius, _real_widget->robot_radius);
+        painter.drawEllipse(QPoint(leftRect.left() + current->x(), leftRect.top() + current->y()),
+                           robot_radius, robot_radius);
 
     //Robot
         // Draw planned path
         pen.setColor(QColor(0,0,255));
         painter.setPen(pen);
-        for (list<Map::Cell*>::iterator i = _robot_widget->path_planned.begin(); i != _robot_widget->path_planned.end(); i++)
+        for (list<Map::Cell*>::iterator i = path_planned.begin(); i != path_planned.end(); i++)
             painter.drawPoint(rightRect.left() + (*i)->x(), rightRect.top() + (*i)->y());
         // Draw scanner radius
         pen.setColor(QColor(255,0,0));
         painter.setPen(pen);
-        painter.drawEllipse(QPoint(rightRect.left() + _robot_widget->current->x(), rightRect.top() + _robot_widget->current->y()),
-                            _robot_widget->scan_radius,_robot_widget->scan_radius);
+        painter.drawEllipse(QPoint(rightRect.left() + current->x(), rightRect.top() + current->y()),
+                            scan_radius,scan_radius);
         // Draw current position
         pen.setColor(QColor(255,128,128));
         painter.setPen(pen);
-        painter.drawEllipse(QPoint(rightRect.left() + _robot_widget->current->x(), rightRect.top() + _robot_widget->current->y()),
-                            _real_widget->robot_radius, _real_widget->robot_radius);
+        painter.drawEllipse(QPoint(rightRect.left() + current->x(), rightRect.top() + current->y()),
+                            robot_radius, robot_radius);
 }
 
-void Dialog::mousePressEvent(QMouseEvent *event)
+void Dialog::mousePressEvent(QMouseEvent* event)
 {
     if (leftRect.contains(event->localPos().x(),event->localPos().y()))
         if (real_bitmap.bits()==NULL)
@@ -366,6 +355,32 @@ void Dialog::mousePressEvent(QMouseEvent *event)
                 update();
             }
         }
+}
+
+void Dialog::mouseMoveEvent(QMouseEvent* event)
+{
+    if (event->buttons() & Qt::LeftButton)
+    {
+        if (leftRect.contains(event->localPos().x(),event->localPos().y()))
+        {
+            if (real_bitmap.bits()==NULL)
+                return;
+
+            real_bitmap.setPixel(event->localPos().x(),event->localPos().y(),qRgb(0,0,0));
+
+            if (_init)
+            {
+                int k = event->localPos().x()+event->localPos().y()*real_bitmap.width();
+
+                realWorldData[k]=0;
+                (*_map)(event->localPos().x(),event->localPos().y())->cost = Map::Cell::COST_UNWALKABLE;
+            }
+
+            update();
+        }
+    }
+
+    QDialog::mouseMoveEvent(event);
 }
 
 QImage Dialog::Pk8bitGrayToQIm(const unsigned char *pBuffer, const int &bufWidth, const int &bufHight)
